@@ -5,7 +5,7 @@
  * @requires jQuery v1.2.3 or higher
  * 
  * Copyright (c) 2012 William Lee
- * Examples and docs at: http://tablesorter.com
+ * Examples and docs at: https://github.com/wleemilco/mcValidate
  * Dual licensed under the MIT and GPL licenses:
  * http://www.opensource.org/licenses/mit-license.php
  * http://www.gnu.org/licenses/gpl.html
@@ -15,31 +15,8 @@
  * 
  * @description Simple client-side validation solution using CSS and with configurable output settings 
  * 
- * @example $('table').tablesorter();
- * @desc Create a simple tablesorter interface.
- * 
- * @example $('table').tablesorter({ sortList:[[0,0],[1,0]] });
- * @desc Create a tablesorter interface and sort on the first and secound column column headers.
- * 
- * @example $('table').tablesorter({ headers: { 0: { sorter: false}, 1: {sorter: false} } });
- *          
- * @desc Create a tablesorter interface and disableing the first and second  column headers.
- *      
- * 
- * @example $('table').tablesorter({ headers: { 0: {sorter:"integer"}, 1: {sorter:"currency"} } });
- * 
- * @desc Initialize and prepare CSS-based validation to form fields
- * 
- * 
- * @param Object
- *            settings An object literal containing key/value pairs to provide
- *            optional settings.
- * 
- * 
- * @option String cssHeader (optional) A string of the class name to be appended
- *         to sortable tr elements in the thead of the table. Default value:
- *         "header"
- * 
+ * @example $(document).mcValidate();
+ * @desc Create and initialize with default settings
  * 
  * @type jQuery
  * 
@@ -64,13 +41,19 @@
 				'hide':0,
 				'show':1
 			};  
+			
+			this.formSubmitAlerted = 0;
+			this.formSubmitErrorEncountered = 0;
+			this.formSubmitTimeout = null;
 
             this.defaults = {
-            	validationDefaultEvent: "blur", //options: blur, formSubmit
+            	validationDefaultEvent: "submit", //options: blur, formSubmit
             	defaultMcValidationAlertBoxShowType: "fade", //options: show, slide, fade 
             	validationDefaultFormSubmitID: "",
             	validationAlertFunction: defaultValidationAlertHandler,
-                validationAlertMode: "single",
+            	validationSubmitFailFunction: defaultSubmitFailHandler,
+                validationAlertMode: "all", //only applies to formSubmit, options: single, all, single: validation stops after first alert
+                validationAlertFocus: "last", //only applies to formSubmit, and when alertMode is all, options: first, last
                 debug: false
             };
             
@@ -112,62 +95,98 @@
 						}
 					);                     
 
-                	$this.find('[class*=mcValidateBetween]').each(
+					if(config['validationDefaultEvent'] != 'submit') {
+						$this.find('[class*=mcValidateBetween]').each(
+							function() {
+								$(this).bind(config['validationDefaultEvent'],validatorBetween);	
+							}
+						);	
+					}
+					
+					$this.find('[class*=mcValidateOnSubmit]').each(
 						function() {
-
-							$(this).bind(config['validationDefaultEvent'],function() {
-								
-								var elementClassesStr = $(this).attr('class');		
-								var classList = elementClassesStr.split(/\s+/);
-								var i = 0;
-								var j = 0;
-								var low = 0; 
-								var high = 0;
-								var currentVal = 0;
-								
-								for (i = 0; i < classList.length; i++) {
-								   if (classList[i].substring(0,18) === 'mcValidateBetween_') {
-								   		var splitList = classList[i].split(/_/);
-								   		
-								   		if(splitList.length == 3) {
-								   			low = parseFloat(splitList[1]);
-								   			high = parseFloat(splitList[2]);
-								   		}
-								   }
-								}
-								
-								currentVal = parseFloat($(this).val());
-								
-								if(currentVal < low || currentVal > high) {
-									if(canAlert($(this)) == true) {
-										setAlerted($(this));
-										//alert(currentVal + ' ' + low + ' ' + high);
-										//alertMsg = getAlertMessage($(this),'The value entered is out of range ['+ low + ' - ' + high + ' ]');
-										
-										var alertMsgParams;
-										var alertMsg;
-										
-										alertMsgParams = [$(this),'The value entered is out of range ['+ low + ' - ' + high + ']',currentVal,low,high];
-										alertMsg = getAlertMessage.apply($(this), alertMsgParams);
-										
-										config['validationAlertFunction'].apply($(this), [$.mcValidate.validationStates.error, alertMsg]);										
-									}
-								}
-								else {
-
-									var successMsgParams;
-									var successMsg;
-									
-									successMsgParams = [$(this),'',currentVal,low,high];
-									successMsg = getSuccessMessage.apply($(this), successMsgParams);
-									config['validationAlertFunction'].apply($(this), [$.mcValidate.validationStates.success, successMsg]);
-								}								
-							});								
-				
+							$(this).bind('submit',{ parentElement: $(this) }, validatorSubmit);	
 						}
-					);                           
+					);
+                	                           
             	});
             };        
+            
+            function validatorSubmit(event) {
+            	
+        		//reset this
+        		$.mcValidate.formSubmitErrorEncountered = 0;
+        		$.mcValidate.formSubmitTimeout = null;
+				event.data.parentElement.find('[class*=mcValidateBetween]').each(
+					function() {
+						if(config['validationAlertMode'] == 'single') {
+							if($.mcValidate.formSubmitErrorEncountered == 0) {
+								validatorBetween.apply($(this), []);		
+							}	
+						}
+						else {
+							validatorBetween.apply($(this), []);	
+						}
+					}
+				);          
+				
+				if($.mcValidate.formSubmitErrorEncountered != 0) {
+					config['validationSubmitFailFunction'].apply($(this), []);
+					return false;
+				}  	
+            }
+            
+			function validatorBetween() {
+
+				var elementClassesStr = $(this).attr('class');		
+				var classList = elementClassesStr.split(/\s+/);
+				var i = 0;
+				var j = 0;
+				var low = 0; 
+				var high = 0;
+				var currentVal = 0;
+				
+				for (i = 0; i < classList.length; i++) {
+				   if (classList[i].substring(0,18) === 'mcValidateBetween_') {
+				   		var splitList = classList[i].split(/_/);
+				   		
+				   		if(splitList.length == 3) {
+				   			low = parseFloat(splitList[1]);
+				   			high = parseFloat(splitList[2]);
+				   		}
+				   }
+				}
+				
+				currentVal = parseFloat($(this).val());
+				
+				if(currentVal < low || currentVal > high) {
+					if(canAlert($(this)) == true) {
+						setAlerted($(this));
+						//alert(currentVal + ' ' + low + ' ' + high);
+						//alertMsg = getAlertMessage($(this),'The value entered is out of range ['+ low + ' - ' + high + ' ]');
+						
+						var alertMsgParams;
+						var alertMsg;
+						
+						alertMsgParams = [$(this),'The value entered is out of range ['+ low + ' - ' + high + ']',currentVal,low,high];
+						alertMsg = getAlertMessage.apply($(this), alertMsgParams);
+						
+						config['validationAlertFunction'].apply($(this), [$.mcValidate.validationStates.error, alertMsg]);
+						
+						postValidationErrorHandler($(this));						
+					}
+				}
+				else {
+
+					var successMsgParams;
+					var successMsg;
+					
+					successMsgParams = [$(this),'',currentVal,low,high];
+					successMsg = getSuccessMessage.apply($(this), successMsgParams);
+					config['validationAlertFunction'].apply($(this), [$.mcValidate.validationStates.success, successMsg]);
+				}															
+	
+			}            
             
 			function formatAlertMessage(stringToFormat) {  
 			    var args = arguments;  
@@ -175,7 +194,29 @@
 			    return String(stringToFormat).replace(pattern, function(match, index) {  
 			    		return args[index];  
 			    	});  
-		    };              
+		    };
+		    
+		    function postValidationErrorHandler(element) {
+				//just for form submits, doesn't do anything for other events			
+				$.mcValidate.formSubmitErrorEncountered = this.formSubmitErrorEncountered + 1;
+				
+				//focus on offending field
+                if(config['validationAlertFocus'] == 'first') {
+                	if($.mcValidate.formSubmitTimeout == null) {
+                		$.mcValidate.formSubmitTimeout = setTimeout(function() { element.focus(); },50);
+                	}
+                }	
+                else if(config['validationAlertFocus'] == 'last') {
+                	if($.mcValidate.formSubmitTimeout == null) {
+                		$.mcValidate.formSubmitTimeout = setTimeout(function() { element.focus(); },50);
+                	}
+                	else {
+                		clearTimeout($.mcValidate.formSubmitTimeout);
+                		$.mcValidate.formSubmitTimeout = setTimeout(function() { element.focus(); },50);
+                	}                	
+                }			
+				
+		    }              
             
             function defaultValidationAlertHandler(validationState, msg) {
             	//by default, search for mcValidationAlertBox and make visible/hidden depending on state
@@ -188,6 +229,9 @@
             			//show box
             			defaultValidationAlertAnimation($(this).parent().children('[class*=mcValidationAlertBox]'),$.mcValidate.validationAnimations.show);
             		}
+            		
+            		//focus on the field with the error
+            		setTimeout(function() { $(this).focus(); },50);
             	}
             	else if(validationState == $.mcValidate.validationStates.success) {
             		if($(this).parent().children('[class*=mcValidationAlertBox]').length > 0) {
@@ -196,6 +240,10 @@
             		}            		
             	}
             			
+            }
+            
+            //placeholder: do nothing
+            function defaultSubmitFailHandler() {
             }
             
             function defaultValidationAlertAnimation(e,validationAnimation) {
