@@ -47,7 +47,7 @@
 			this.formSubmitTimeout = null;
 
             this.defaults = {
-            	validationDefaultEvent: "submit", //options: blur, formSubmit
+            	validationDefaultEvent: "submit", //options: blur, formSubmit, blur includes change/click events
             	defaultMcValidationAlertBoxShowType: "fade", //options: show, slide, fade 
             	validationDefaultFormSubmitID: "",
             	validationAlertFunction: defaultValidationAlertHandler,
@@ -100,7 +100,13 @@
 							function() {
 								$(this).bind(config['validationDefaultEvent'],validatorBetween);	
 							}
-						);	
+						);
+						
+						$this.find('[class*=mcValidateRequired]').each(
+							function() {
+								$(this).bind(config['validationDefaultEvent'],validatorRequired);	
+							}
+						);								
 					}
 					
 					$this.find('[class*=mcValidateOnSubmit]').each(
@@ -128,7 +134,20 @@
 							validatorBetween.apply($(this), []);	
 						}
 					}
-				);          
+				);   
+				
+				event.data.parentElement.find('[class*=mcValidateRequired]').each(
+					function() {
+						if(config['validationAlertMode'] == 'single') {
+							if($.mcValidate.formSubmitErrorEncountered == 0) {
+								validatorRequired.apply($(this), []);		
+							}	
+						}
+						else {
+							validatorRequired.apply($(this), []);	
+						}
+					}
+				);  				       
 				
 				if($.mcValidate.formSubmitErrorEncountered != 0) {
 					config['validationSubmitFailFunction'].apply($(this), []);
@@ -187,6 +206,63 @@
 				}															
 	
 			}            
+            
+			function validatorRequired() {
+				//check element type
+				
+				//if text/password, check for non-empty string
+				//if radio/select, check for one element of name selected
+				//if checkbox, check for checked														
+				var thisValid = true;
+	
+				if($(this).is('input:checkbox')) {
+					if($(this).is(':checked')) {
+
+					}
+					else {						
+						thisValid = false;						
+					}											
+				}
+				else if($(this).is('select')) {
+					if ($(this).children(':selected').val() === null || $(this).children(':selected').val() === undefined) {
+						thisValid = false;
+					}
+				}
+				else if($(this).is('input:radio')) {
+					if ($('input[name=' + $(this).attr('name') + ']:checked').val() === null || $('input[name=' + $(this).attr('name') + ']:checked').val() === undefined) {
+						thisValid = false;
+					}
+				}
+				else if($(this).is('input:text')) {
+					if ($(this).val() === '') {
+						thisValid = false;
+					}
+				}				
+			
+				if(thisValid == true) {
+					var successMsgParams;
+					var successMsg;
+					
+					successMsgParams = [$(this),''];
+					successMsg = getSuccessMessage.apply($(this), successMsgParams);
+					config['validationAlertFunction'].apply($(this), [$.mcValidate.validationStates.success, successMsg]);					
+				}				
+				else {
+					if(canAlert($(this)) == true) {
+						setAlerted($(this));
+	
+						var alertMsgParams;
+						var alertMsg;
+						
+						alertMsgParams = [$(this),'This field is required'];
+						alertMsg = getAlertMessage.apply($(this), alertMsgParams);
+						
+						config['validationAlertFunction'].apply($(this), [$.mcValidate.validationStates.error, alertMsg]);
+						
+						postValidationErrorHandler($(this));						
+					}					
+				}
+			}              
             
 			function formatAlertMessage(stringToFormat) {  
 			    var args = arguments;  
